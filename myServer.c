@@ -38,6 +38,9 @@ int main(int argc, char *argv[])
 	int clientSocket = 0;   //socket descriptor for a client socket
 	int activeSocket = 0;   //socket descriptor for the currently active socket
 	int portNumber = 0;
+	int waitingSockets[15] = {-1}; // holds the socket numbers that have connected, but have not yet sent their handle (flag 1)
+	int numWaiting = 0; // number of waiting sockets in list
+	// TODO: implement waiting on sockets
 	
 	portNumber = checkArgs(argc, argv);
 	

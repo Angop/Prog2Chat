@@ -12,8 +12,8 @@ all:   cclient server
 cclient: myClient.c networks.o gethostbyname.o sendrecv.o
 	$(CC) $(CFLAGS) -o cclient myClient.c networks.o gethostbyname.o sendrecv.o $(LIBS)
 
-server: myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o
-	$(CC) $(CFLAGS) -o server myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o $(LIBS)
+server: myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o
+	$(CC) $(CFLAGS) -o server myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o $(LIBS)
 
 .c.o:
 	gcc -c $(CFLAGS) $< -o $@ $(LIBS)
