@@ -10,8 +10,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#define MAXBUF 1024
+#include "shared.h"
 
-void sendPacket(int socketNum, char *sendData, int dataLen);
-void recvPacket(int clientSocket, char *buf);
-int exitFound(char *buf, int len);
+
+void sendPacket(int socketNum, char *sendData, int dataLen, uint8_t flag);
+uint8_t recvPacket(int clientSocket, char *buf);

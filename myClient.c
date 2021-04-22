@@ -20,9 +20,8 @@
 
 #include "networks.h"
 #include "sendrecv.h"
+#include "shared.h"
 
-#define MAXBUF 1024
-#define DEBUG_FLAG 1
 
 int sendToServer(int socketNum, char *sendBuf);
 void sendLoop(int socketNum);
@@ -62,7 +61,7 @@ int sendToServer(int socketNum, char *sendBuf) {
 	sendLen = readFromStdin(sendBuf);
 	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 	
-	sendPacket(socketNum, sendBuf, sendLen);
+	sendPacket(socketNum, sendBuf, sendLen, 14); // TODO: temp placeholder 14 for flag
 	return sendLen;
 }
 
@@ -105,10 +104,14 @@ void recvFromServer(int socketNum) {
 	// receives a message from the server
 	char recvBuf[MAXBUF];
 	uint16_t msgLen = 0;
+	uint8_t flag = 0;
 
 	recvPacket(socketNum, recvBuf);
 	memcpy(&msgLen, recvBuf, sizeof(uint16_t));
+	memcpy(&flag, recvBuf + sizeof(uint16_t), sizeof(uint8_t));
 	msgLen = ntohs(msgLen);
-	printf("Recv() from Server: ");
-	printf("%.*s\n", (int)(msgLen - sizeof(uint16_t)), recvBuf + sizeof(uint16_t));
+
+
+	printf("Recv() from Server bytes-%d and flag-%d: ", msgLen, flag);
+	printf("%.*s\n", (int)(msgLen - HEADER_BYTES), recvBuf + HEADER_BYTES);
 }

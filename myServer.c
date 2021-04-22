@@ -22,10 +22,11 @@
 #include "networks.h"
 #include "sendrecv.h"
 #include "pollLib.h"
+#include "shared.h"
 
-#define MAXBUF 1024
-#define DEBUG_FLAG 1
+#define MAX_WAITING 100
 
+void handleAccept(int serverSocket);
 void handleClient(int clientSocket);
 void recvFromClient(int clientSocket, char *buf);
 int checkArgs(int argc, char *argv[]);
@@ -35,12 +36,8 @@ void sendToClient(int clientSocket, char *pdu1);
 int main(int argc, char *argv[])
 {
 	int serverSocket = 0;   //socket descriptor for the server socket
-	int clientSocket = 0;   //socket descriptor for a client socket
 	int activeSocket = 0;   //socket descriptor for the currently active socket
 	int portNumber = 0;
-	int waitingSockets[15] = {-1}; // holds the socket numbers that have connected, but have not yet sent their handle (flag 1)
-	int numWaiting = 0; // number of waiting sockets in list
-	// TODO: implement waiting on sockets
 	
 	portNumber = checkArgs(argc, argv);
 	
@@ -57,10 +54,8 @@ int main(int argc, char *argv[])
 
 		if (activeSocket == serverSocket) {
 			// a client is trying to connect
-			clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
-			addToPollSet(clientSocket);
+			handleAccept(serverSocket);
 		}
-
 		else {
 			// a client is sending a PDU
 			handleClient(activeSocket);
@@ -73,6 +68,12 @@ int main(int argc, char *argv[])
 	close(serverSocket);
 	
 	return 0;
+}
+
+void handleAccept(int serverSocket) {
+	int clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
+	addToPollSet(clientSocket);
+	// TODO: handle waiting list of clients who have connected but not yet sent initial packet
 }
 
 void handleClient(int clientSocket) {
@@ -111,8 +112,8 @@ void sendToClient(int clientSocket, char *pdu1) {
 	sprintf(pdu2Message, "Number of bytes received by server was: %d", (int)pdu1Len);
 	uint16_t pdu2Len = strnlen(pdu2Message, MAXBUF) + 1; // +1 for null termination
 
-	sendPacket(clientSocket, pdu1 + 2, pdu1Len - 2); // factor of 2 removes the header
-	sendPacket(clientSocket, pdu2Message, pdu2Len);
+	sendPacket(clientSocket, pdu1 + HEADER_BYTES, pdu1Len - HEADER_BYTES, 14);
+	sendPacket(clientSocket, pdu2Message, pdu2Len, 14);
 }
 
 int checkForExit(char *buf) {
@@ -151,4 +152,3 @@ int checkArgs(int argc, char *argv[])
 	
 	return portNumber;
 }
-

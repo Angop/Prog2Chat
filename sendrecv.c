@@ -4,19 +4,18 @@
 
 #include "sendrecv.h"
 int safeRecv(int socketNum, char *buf, uint16_t len);
+void fillChatHeader(uint16_t pduLen, uint8_t flag, char *buf);
 
-void sendPacket(int socketNum, char *sendData, int dataLen) {
+void sendPacket(int socketNum, char *sendData, int dataLen, uint8_t flag) {
 	// TODO: check for buf overflow (too long of a message)
 	char sendBuf[MAXBUF];   // data buffer
-	uint16_t pduLen = htons(dataLen + sizeof(uint16_t));    // length of entire pdu
 	int sent = 0;           // actual amount of data sent
-
-	// create PDU
-	memcpy(sendBuf, &pduLen, sizeof(pduLen));
-	memcpy(sendBuf + sizeof(pduLen), sendData, dataLen);
+	
+	fillChatHeader(dataLen + HEADER_BYTES, flag, sendBuf);
+	memcpy(sendBuf + HEADER_BYTES, sendData, dataLen); // insert message into buf
 	
 	// send PDU
-	sent = send(socketNum, sendBuf, dataLen + sizeof(pduLen), 0);
+	sent = send(socketNum, sendBuf, dataLen + HEADER_BYTES, 0);
 	if (sent < 0) {
 		perror("send call");
 		exit(-1);
@@ -24,14 +23,20 @@ void sendPacket(int socketNum, char *sendData, int dataLen) {
 	// printf("Amount of data sent is: %d\n", sent);
 }
 
-void recvPacket(int clientSocket, char *buf) {
-	// populates provided buf with revieved packet
+void fillChatHeader(uint16_t pduLen, uint8_t flag, char *buf) {
+    // fills the first 3 bytes of given buffer with chat header
+	pduLen = htons(pduLen);    // length of entire pdu
+	memcpy(buf, &pduLen, sizeof(uint16_t));
+	memcpy(buf + sizeof(uint16_t), &flag, sizeof(uint8_t));
+}
+
+uint8_t recvPacket(int clientSocket, char *buf) {
+	// populates provided buf with revieved packet, returns flag or -1 if connection closed
 	uint16_t messageLen = 0;
 	
 	// get the header
 	if (!safeRecv(clientSocket, buf, sizeof(messageLen))) {
-		// connection was closed, return
-		return;
+		return -1;
 	}
 	
 	memcpy(&messageLen, buf, sizeof(messageLen));
@@ -41,9 +46,9 @@ void recvPacket(int clientSocket, char *buf) {
 
 	//now get the data from the client_socket
 	if (!safeRecv(clientSocket, buf + sizeof(messageLen), messageLen - sizeof(messageLen))) {
-		// connection was closed, return
-		return;
+		return -1;
 	}
+	return buf[HEADER_BYTES]; // HEADER_BYTES is the location of the flag
 }
 
 int safeRecv(int socketNum, char *buf, uint16_t len) {
@@ -60,13 +65,4 @@ int safeRecv(int socketNum, char *buf, uint16_t len) {
 		return 0;
 	}
 	return 1;
-}
-
-int exitFound(char *buf, int len) {
-	// checks if given string is "exit"
-	if (len != 5) {
-		return 0;
-	}
-	return !strncmp("exit\0", buf, 5);
-
 }

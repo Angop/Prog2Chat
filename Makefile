@@ -9,11 +9,14 @@ LIBS =
 
 all:   cclient server
 
-cclient: myClient.c networks.o gethostbyname.o sendrecv.o
-	$(CC) $(CFLAGS) -o cclient myClient.c networks.o gethostbyname.o sendrecv.o $(LIBS)
+cclient: myClient.c networks.o gethostbyname.o sendrecv.o shared.o
+	$(CC) $(CFLAGS) -o cclient myClient.c networks.o gethostbyname.o sendrecv.o shared.o $(LIBS)
 
-server: myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o
-	$(CC) $(CFLAGS) -o server myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o $(LIBS)
+server: myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o shared.o
+	$(CC) $(CFLAGS) -o server myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o shared.o $(LIBS)
+
+testSH: pollLib.o socketHandle.o socketHandleTestcases.o safeUtil.o
+	$(CC) $(CFLAGS) -o testSH socketHandleTestcases.o pollLib.o socketHandle.o safeUtil.o $(LIBS)
 
 .c.o:
 	gcc -c $(CFLAGS) $< -o $@ $(LIBS)
@@ -22,7 +25,7 @@ cleano:
 	rm -f *.o
 
 clean:
-	rm -f myServer myClient *.o
+	rm -f server cclient testSH *.o
 
 
 
