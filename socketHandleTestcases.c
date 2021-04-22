@@ -11,11 +11,14 @@ int main(int argc, char *argv[]) {
     printf("------testAddOneSocket------\n");
     printf(addSocketHandle(1, "client1\0", 8) ? "pass\n" : "fail\n");
 
+    printf("------testAddDupHandle------\n");
+    printf(addSocketHandle(3, "client1\0", 8) ? "fail\n" : "pass\n");
+
     printf("------testRemoveSocketWhenOnlyOne------\n");
-    printf(closeSocketHandle("client1\0", 8) ? "pass\n" : "fail\n");
+    printf(closeSocketHandle(1) ? "pass\n" : "fail\n");
 
     printf("------testRemoveSocketWhenNone------\n");
-    printf(closeSocketHandle("client3\0", 8) ? "fail\n" : "pass\n");
+    printf(closeSocketHandle(3) ? "fail\n" : "pass\n");
 
     printf("------testAddMoreSocket------\n");
     printf(addSocketHandle(1, "client1\0", 8) ? "pass\n" : "fail\n");
@@ -25,7 +28,7 @@ int main(int argc, char *argv[]) {
     printf(addSocketHandle(5, "client5\0", 8) ? "pass\n" : "fail\n");
 
     printf("------testRemoveSocketWhenMany------\n");
-    printf(closeSocketHandle("client3\0", 8) ? "pass\n" : "fail\n");
+    printf(closeSocketHandle(3) ? "pass\n" : "fail\n");
 
     printf("------getSockets------\n");
     printf(getNumEntries() == 4 ? "pass\n" : "fail\n");

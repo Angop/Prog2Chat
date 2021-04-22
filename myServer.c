@@ -23,30 +23,22 @@
 #include "sendrecv.h"
 #include "pollLib.h"
 #include "shared.h"
+#include "socketHandle.h"
 
-#define MAX_WAITING 100
-
+int setupServer(int argc, char *argv[]);
 void handleAccept(int serverSocket);
 void handleClient(int clientSocket);
 void recvFromClient(int clientSocket, char *buf);
 int checkArgs(int argc, char *argv[]);
 int checkForExit(char *buf);
-void sendToClient(int clientSocket, char *pdu1);
+void forwardToClient(int clientSocket, char *pdu1); // forwards existing pdu to client
 
-int main(int argc, char *argv[])
-{
-	int serverSocket = 0;   //socket descriptor for the server socket
+// functions to handle each of the user functions
+void initialPacket(char *pdu, int socketNum);
+
+int main(int argc, char *argv[]) {
+	int serverSocket = setupServer(argc, argv);   //socket descriptor for the server socket
 	int activeSocket = 0;   //socket descriptor for the currently active socket
-	int portNumber = 0;
-	
-	portNumber = checkArgs(argc, argv);
-	
-	//create the server socket
-	serverSocket = tcpServerSetup(portNumber);
-
-	// set up poll
-	setupPollSet();
-	addToPollSet(serverSocket);
 
 	// wait for client(s) to connect and recieve data
 	while (1) {
@@ -62,11 +54,6 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	/* close the sockets */
-	// TODO: close all clients
-	// Do I need to close any sockets? server only dies w ^C anyway
-	close(serverSocket);
-	
 	return 0;
 }
 
@@ -79,15 +66,43 @@ void handleAccept(int serverSocket) {
 void handleClient(int clientSocket) {
 	char pdu[MAXBUF];
 	recvFromClient(clientSocket, pdu);
+	uint8_t flag = parseFlag(pdu);
+
 	if (checkForExit(pdu)) {
 		// client is attempting to exit
 		printf("Client %d exited\n", clientSocket);
-		removeFromPollSet(clientSocket);
-		close(clientSocket);
+		if (!closeSocketHandle(clientSocket)) {
+			fprintf(stderr, "closeSocketHandle: socket does not exist");
+			exit(EXIT_FAILURE);
+		}
+	}
+	else if (flag == INIT_FLAG) {
+		initialPacket(pdu, clientSocket);
+	}
+}
+
+// high level client functionality
+
+void initialPacket(char *pdu, int socketNum) {
+	// response to flag=1
+	uint8_t handleLen = 0; // length of handle not including null byte
+	char handle[handleLen + 1]; // +1 for null
+	handle[handleLen] = '\0'; // null terminate
+
+	// TODO: error check bad handleLen? 3+1+handleLen==pduLen?
+	memcpy(&handleLen, pdu + HEADER_BYTES, sizeof(uint8_t));
+	memcpy(handle, pdu + HEADER_BYTES + 1, handleLen);
+
+	if (!addSocketHandle(socketNum, handle, 1)) {
+		// duplicate handle
+		removeFromPollSet(socketNum);
+		sendPacket(socketNum, NULL, 0, INIT_ERR_FLAG);
+		printf("Denied connection on handle: %s\n", handle);
+		close(socketNum);
 	}
 	else {
-		// Test the client's recv process
-		sendToClient(clientSocket, pdu);
+		sendPacket(socketNum, NULL, 0, INIT_ACPT_FLAG);
+		printf("Handle len: %d recv: %s\n",handleLen, handle);
 	}
 }
 
@@ -99,10 +114,10 @@ void recvFromClient(int clientSocket, char *buf)
 	memcpy(&messageLen, buf, sizeof(messageLen));
 	messageLen = ntohs(messageLen);
 
-	printf("PDU Len: %d Message: %s\n", messageLen, buf + sizeof(uint16_t));
+	printf("PDU Len: %d Flag: %d Message: %.*s\n", messageLen, buf[2], messageLen - 3,buf + 3);
 }
 
-void sendToClient(int clientSocket, char *pdu1) {
+void forwardToClient(int clientSocket, char *pdu1) {
 	// Tests the clients receive process
 	uint16_t pdu1Len;
 	char pdu2Message[MAXBUF];
@@ -132,6 +147,18 @@ int checkForExit(char *buf) {
 	}
 	// connection was closed
 	return 1;
+}
+
+int setupServer(int argc, char *argv[]) {
+	//create the server socket
+	int portNumber = 0;
+	portNumber = checkArgs(argc, argv);
+	int serverSocket = tcpServerSetup(portNumber);
+
+	// set up poll
+	setupPollSet();
+	addToPollSet(serverSocket);
+	return serverSocket;
 }
 
 int checkArgs(int argc, char *argv[])

@@ -1,3 +1,6 @@
 server
 cclient
 *.o
+testSH
+.vscode/launch.json
+.vscode/tasks.json

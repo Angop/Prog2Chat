@@ -12,7 +12,9 @@ void sendPacket(int socketNum, char *sendData, int dataLen, uint8_t flag) {
 	int sent = 0;           // actual amount of data sent
 	
 	fillChatHeader(dataLen + HEADER_BYTES, flag, sendBuf);
-	memcpy(sendBuf + HEADER_BYTES, sendData, dataLen); // insert message into buf
+	if (sendData) {
+		memcpy(sendBuf + HEADER_BYTES, sendData, dataLen); // insert message into buf
+	}
 	
 	// send PDU
 	sent = send(socketNum, sendBuf, dataLen + HEADER_BYTES, 0);

@@ -6,13 +6,11 @@
 #include "socketHandle.h"
 #include "pollLib.h"
 
-#define MAX_HANDLE_LEN 101 // includes space for null termination
-
 
 typedef struct ShNode *shNode;
 struct ShNode {
     int sNum;
-    char handle[MAX_HANDLE_LEN];
+    char handle[MAX_HANDLE_LEN + 1];
     int handleLen;
     shNode next;
 };
@@ -33,7 +31,7 @@ int addSocketHandle(int socketNum, char *handle, int handleLen) {
     // Create the new node structure dd make into helper?
     shNode new = (shNode)malloc(sizeof(struct ShNode));
     new->sNum = socketNum;
-    memcpy(&(new->handle), handle, handleLen);
+    memcpy(new->handle, handle, handleLen * sizeof(int8_t));
     new->handleLen = handleLen;
     new->next = NULL;
     
@@ -66,24 +64,20 @@ int addSocketHandle(int socketNum, char *handle, int handleLen) {
 }
 
 
-int closeSocketHandle(char *handle, int handleLen) {
-    // closes the socket associated with given handle, returns 1 on sucess and 0 if it does not exist
-    // TODO
+int closeSocketHandle(int socketNum) {
+    // closes the socket, returns 1 on sucess and 0 if it does not exist
     shNode cur = root;
     shNode last = NULL;
     shNode temp = NULL;
 
     while (cur != NULL) {
-        if (cur->handleLen == handleLen) {
-            // compare the two handles
-            if (!strncmp(handle, cur->handle, handleLen)) {
-                // found the socket!
-                temp = cur->next;
-                shClose(cur);
-                // remove node from list
-                if (last) { last->next = temp; } else{ root = temp; }
-                return 1;
-            }
+        if (cur->sNum == socketNum) {
+            // found the socket! close it
+            temp = cur->next;
+            shClose(cur);
+            // remove node from list
+            if (last) { last->next = temp; } else{ root = temp; }
+            return 1;
         }
         last = cur;
         cur = cur->next;
@@ -95,8 +89,8 @@ int closeSocketHandle(char *handle, int handleLen) {
 
 void shClose(shNode sh) {
     // close socket, remove it from pollset, free node
-    // removeFromPollSet(sh->sNum); // TODO UNCOMMENT THESE
-    // close(sh->sNum);
+    removeFromPollSet(sh->sNum); // TODO UNCOMMENT THESE
+    close(sh->sNum);
     free(sh);
     shLen--;
 }

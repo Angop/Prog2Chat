@@ -28,15 +28,16 @@ void sendLoop(int socketNum);
 int readFromStdin(char * buffer);
 void checkArgs(int argc, char * argv[]);
 void recvFromServer(int socketNum);
+void setupHandle(int socketNum, int argc, char **argv);
 
-int main(int argc, char * argv[])
-{
-	int socketNum = 0;         //socket descriptor
+int main(int argc, char * argv[]) {
+	int socketNum = 0;         //socket descriptor of server
 	
 	checkArgs(argc, argv);
 
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
+	setupHandle(socketNum, argc, argv);
 	
 	sendLoop(socketNum);
 	
@@ -45,13 +46,40 @@ int main(int argc, char * argv[])
 	return 0;
 }
 
+void setupHandle(int socketNum, int argc, char **argv) {
+	// TODO: verify valid handle given
+	char buf[MAXBUF] = {0};
+	char *handle = argv[3];
+	uint8_t handleLen = strnlen(handle, MAX_HANDLE_LEN);
+	int flag = 0;
+	printf("handleLenClient: %d\n", handleLen);
+
+	// format payload of send
+	buf[0] = handleLen;
+	memcpy(buf + 1, handle, handleLen);
+
+	sendPacket(socketNum, buf, handleLen + 1, INIT_FLAG); // + 1 for handleLen
+	recvPacket(socketNum, buf); // receive response to setup
+	if ((flag=parseFlag(buf)) == INIT_ERR_FLAG) {
+		// handle is taken
+		printf("Error on initial packet (handle already exists)\n");
+		close(socketNum);
+		exit(EXIT_FAILURE);
+	}
+	else if (flag != INIT_ACPT_FLAG) {
+		// debug bad server response
+		printf("Error on initial packet (server gave bad response)\n");
+		exit(EXIT_FAILURE);
+	}
+	// otherwise, the handle is good!
+	printf("Connection successful!\n");
+}
+
 void sendLoop(int socketNum) {
 	char sendBuf[MAXBUF]; //data buffer
 	int sendLen = 0; //data buffer
 	do {
 		sendLen = sendToServer(socketNum, sendBuf);
-		recvFromServer(socketNum);
-		recvFromServer(socketNum);
 	} while(!exitFound(sendBuf, sendLen));
 }
 
@@ -93,9 +121,9 @@ int readFromStdin(char * buffer)
 void checkArgs(int argc, char * argv[])
 {
 	/* check command line arguments  */
-	if (argc != 3)
+	if (argc != 4)
 	{
-		printf("usage: %s host-name port-number \n", argv[0]);
+		printf("usage: %s host-name port-number handle \n", argv[0]);
 		exit(1);
 	}
 }
