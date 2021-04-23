@@ -35,6 +35,7 @@ void forwardToClient(int clientSocket, char *pdu1); // forwards existing pdu to 
 
 // functions to handle each of the user functions
 void initialPacket(char *pdu, int socketNum);
+void clientExit(int clientSocket);
 
 int main(int argc, char *argv[]) {
 	int serverSocket = setupServer(argc, argv);   //socket descriptor for the server socket
@@ -68,15 +69,14 @@ void handleClient(int clientSocket) {
 	recvFromClient(clientSocket, pdu);
 	uint8_t flag = parseFlag(pdu);
 
-	if (checkForExit(pdu)) {
-		// client is attempting to exit
-		printf("Client %d exited\n", clientSocket);
-		if (!closeSocketHandle(clientSocket)) {
-			fprintf(stderr, "closeSocketHandle: socket does not exist");
-			exit(EXIT_FAILURE);
-		}
+	printf("YOURE GOOD1\n");
+	if (flag == EXIT_FLAG || checkForExit(pdu)) {
+		// client is attempting to exit or they ^C
+		printf("YOURE GOOD2\n");
+		clientExit(clientSocket);
 	}
 	else if (flag == INIT_FLAG) {
+		printf("YOURE NOT GOOD3\n");
 		initialPacket(pdu, clientSocket);
 	}
 }
@@ -102,7 +102,15 @@ void initialPacket(char *pdu, int socketNum) {
 	}
 	else {
 		sendPacket(socketNum, NULL, 0, INIT_ACPT_FLAG);
-		printf("Handle len: %d recv: %s\n",handleLen, handle);
+		printf("Handle len: %d recv: %.*s\n",handleLen, handleLen,handle);
+	}
+}
+
+void clientExit(int clientSocket) {
+	printf("Client %d exited\n", clientSocket);
+	if (!closeSocketHandle(clientSocket)) {
+		fprintf(stderr, "closeSocketHandle: socket does not exist");
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -138,11 +146,7 @@ int checkForExit(char *buf) {
 	memcpy(&pduLen, buf, sizeof(pduLen));
 	pduLen = ntohs(pduLen);
 
-	if (pduLen == 7) {
-		// check for exit message in pdu
-		return exitFound(buf + sizeof(uint16_t), pduLen - sizeof(uint16_t));
-	}
-	else if (pduLen > 0) {
+	if (pduLen > 0) {
 		return 0;
 	}
 	// connection was closed

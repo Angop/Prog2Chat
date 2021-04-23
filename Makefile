@@ -9,8 +9,8 @@ LIBS =
 
 all:   cclient server
 
-cclient: myClient.c networks.o gethostbyname.o sendrecv.o shared.o
-	$(CC) $(CFLAGS) -o cclient myClient.c networks.o gethostbyname.o sendrecv.o shared.o $(LIBS)
+cclient: myClient.c networks.o gethostbyname.o sendrecv.o shared.o pollLib.o safeUtil.o 
+	$(CC) $(CFLAGS) -o cclient myClient.c networks.o gethostbyname.o sendrecv.o shared.o pollLib.o safeUtil.o $(LIBS)
 
 server: myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o shared.o
 	$(CC) $(CFLAGS) -o server myServer.c networks.o gethostbyname.o sendrecv.o pollLib.o safeUtil.o socketHandle.o shared.o $(LIBS)

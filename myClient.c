@@ -14,21 +14,28 @@
 #include <fcntl.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
 #include "networks.h"
+#include "pollLib.h"
 #include "sendrecv.h"
 #include "shared.h"
 
 
-int sendToServer(int socketNum, char *sendBuf);
 void sendLoop(int socketNum);
+void processIncoming(int socketNum);
+void recvFromServer(int socketNum);
+int getCommand(char *buf, int len);
+void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum);
+int sendToServer(int socketNum, char *sendBuf, uint16_t sendLen);
 int readFromStdin(char * buffer);
 void checkArgs(int argc, char * argv[]);
-void recvFromServer(int socketNum);
+
 void setupHandle(int socketNum, int argc, char **argv);
+void clientExit(int socketNum);
 
 int main(int argc, char * argv[]) {
 	int socketNum = 0;         //socket descriptor of server
@@ -38,6 +45,8 @@ int main(int argc, char * argv[]) {
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
 	setupHandle(socketNum, argc, argv);
+	setupPollSet();
+	addToPollSet(socketNum);
 	
 	sendLoop(socketNum);
 	
@@ -52,7 +61,6 @@ void setupHandle(int socketNum, int argc, char **argv) {
 	char *handle = argv[3];
 	uint8_t handleLen = strnlen(handle, MAX_HANDLE_LEN);
 	int flag = 0;
-	printf("handleLenClient: %d\n", handleLen);
 
 	// format payload of send
 	buf[0] = handleLen;
@@ -77,19 +85,44 @@ void setupHandle(int socketNum, int argc, char **argv) {
 
 void sendLoop(int socketNum) {
 	char sendBuf[MAXBUF]; //data buffer
-	int sendLen = 0; //data buffer
+	uint16_t sendLen = 0; // length of buf
+	char command = '\0';
+
 	do {
-		sendLen = sendToServer(socketNum, sendBuf);
-	} while(!exitFound(sendBuf, sendLen));
+		// Process any incoming packets
+		processIncoming(socketNum);
+
+		// Process input
+		sendLen = readFromStdin(sendBuf);
+		printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
+		command = getCommand(sendBuf, sendLen);
+		handleCommand(command, sendBuf, sendLen, socketNum);
+	} while(command != 'e');
 }
 
-int sendToServer(int socketNum, char *sendBuf) {
-	uint16_t sendLen = 0; //amount of data to send
-	
-	sendLen = readFromStdin(sendBuf);
-	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
-	
-	sendPacket(socketNum, sendBuf, sendLen, 14); // TODO: temp placeholder 14 for flag
+int getCommand(char *buf, int len) {
+	// gets the given command, or null if none given
+	if (len < 3 || (len >= 1 && buf[0] != '%')) {
+		// no command given
+		return -1;
+	}
+	return tolower(buf[1]);
+}
+
+void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum) {
+	// fulfill given command
+	// TODO
+	if (command == 'e') {
+		clientExit(socketNum);
+	}
+	else {
+		// For now, just forward the nonsense to the server
+		sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
+	}
+}
+
+int sendToServer(int socketNum, char *sendBuf, uint16_t sendLen) {
+	sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
 	return sendLen;
 }
 
@@ -124,8 +157,13 @@ void checkArgs(int argc, char * argv[])
 	if (argc != 4)
 	{
 		printf("usage: %s host-name port-number handle \n", argv[0]);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
+}
+
+void processIncoming(int socketNum) {
+	// checks server for any incoming packets and deals with them
+	//TODO
 }
 
 void recvFromServer(int socketNum) {
@@ -142,4 +180,16 @@ void recvFromServer(int socketNum) {
 
 	printf("Recv() from Server bytes-%d and flag-%d: ", msgLen, flag);
 	printf("%.*s\n", (int)(msgLen - HEADER_BYTES), recvBuf + HEADER_BYTES);
+}
+
+void clientExit(int socketNum) {
+	char buf[MAXBUF];
+	// uint16_t pduLen = 0;
+
+	// send exit pdu
+	sendPacket(socketNum, NULL, 0, EXIT_FLAG);
+
+	// revceive exit pdu
+	// TODO: dont block while waiting on exit pdu
+	recvPacket(socketNum, buf);
 }
