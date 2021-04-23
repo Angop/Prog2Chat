@@ -26,8 +26,8 @@
 
 
 void sendLoop(int socketNum);
-void processIncoming(int socketNum);
-void recvFromServer(int socketNum);
+int processIncoming(int socketNum, int wait);
+void recvFromServer(int socketNum, char *recvBuf);
 int getCommand(char *buf, int len);
 void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum);
 int sendToServer(int socketNum, char *sendBuf, uint16_t sendLen);
@@ -89,14 +89,14 @@ void sendLoop(int socketNum) {
 	char command = '\0';
 
 	do {
-		// Process any incoming packets
-		processIncoming(socketNum);
-
 		// Process input
 		sendLen = readFromStdin(sendBuf);
 		printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 		command = getCommand(sendBuf, sendLen);
 		handleCommand(command, sendBuf, sendLen, socketNum);
+
+		// Process any incoming packets
+		processIncoming(socketNum, IMM_POLL);
 	} while(command != 'e');
 }
 
@@ -161,14 +161,22 @@ void checkArgs(int argc, char * argv[])
 	}
 }
 
-void processIncoming(int socketNum) {
+int processIncoming(int socketNum, int wait) {
 	// checks server for any incoming packets and deals with them
 	//TODO
+	char buf[MAXBUF];
+	int result = 0;
+	if ((result=pollCall(wait)) != -1) {
+		printf("Poll result: %d\n", result);
+		return parseFlag(buf);
+	}
+	// otherwise, server did not send anything
+	printf("Poll result: %d\n", result);
+	return DEBUG_FLAG;
 }
 
-void recvFromServer(int socketNum) {
+void recvFromServer(int socketNum, char *recvBuf) {
 	// receives a message from the server
-	char recvBuf[MAXBUF];
 	uint16_t msgLen = 0;
 	uint8_t flag = 0;
 
@@ -184,12 +192,16 @@ void recvFromServer(int socketNum) {
 
 void clientExit(int socketNum) {
 	char buf[MAXBUF];
-	// uint16_t pduLen = 0;
+	int flag = DEBUG_FLAG;
 
 	// send exit pdu
 	sendPacket(socketNum, NULL, 0, EXIT_FLAG);
 
-	// revceive exit pdu
-	// TODO: dont block while waiting on exit pdu
-	recvPacket(socketNum, buf);
+	// revceive exit pdu without blocking
+	while (flag != EXIT_ACK_FLAG) {
+		flag = processIncoming(socketNum, INDEF_POLL);
+
+	}
+
+	//recvPacket(socketNum, buf);
 }

@@ -69,10 +69,8 @@ void handleClient(int clientSocket) {
 	recvFromClient(clientSocket, pdu);
 	uint8_t flag = parseFlag(pdu);
 
-	printf("YOURE GOOD1\n");
 	if (flag == EXIT_FLAG || checkForExit(pdu)) {
 		// client is attempting to exit or they ^C
-		printf("YOURE GOOD2\n");
 		clientExit(clientSocket);
 	}
 	else if (flag == INIT_FLAG) {
@@ -107,7 +105,11 @@ void initialPacket(char *pdu, int socketNum) {
 }
 
 void clientExit(int clientSocket) {
-	printf("Client %d exited\n", clientSocket);
+	// send exit acknowledgment
+	sendPacket(clientSocket, NULL, 0, EXIT_ACK_FLAG);
+	printf("Client exited. Socket: %d\n", clientSocket);
+
+	// clean up client
 	if (!closeSocketHandle(clientSocket)) {
 		fprintf(stderr, "closeSocketHandle: socket does not exist");
 		exit(EXIT_FAILURE);
