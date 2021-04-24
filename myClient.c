@@ -168,6 +168,7 @@ int processIncoming(int socketNum, int wait) {
 	int result = 0;
 	if ((result=pollCall(wait)) != -1) {
 		printf("Poll result: %d\n", result);
+		recvFromServer(socketNum, buf); // probably write a handle incoming?
 		return parseFlag(buf);
 	}
 	// otherwise, server did not send anything
@@ -200,7 +201,6 @@ void clientExit(int socketNum) {
 	// revceive exit pdu without blocking
 	while (flag != EXIT_ACK_FLAG) {
 		flag = processIncoming(socketNum, INDEF_POLL);
-
 	}
 
 	//recvPacket(socketNum, buf);

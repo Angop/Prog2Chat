@@ -74,7 +74,6 @@ void handleClient(int clientSocket) {
 		clientExit(clientSocket);
 	}
 	else if (flag == INIT_FLAG) {
-		printf("YOURE NOT GOOD3\n");
 		initialPacket(pdu, clientSocket);
 	}
 }
