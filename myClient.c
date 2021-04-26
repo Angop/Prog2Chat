@@ -35,11 +35,19 @@ int readFromStdin(char * buffer);
 void checkArgs(int argc, char * argv[]);
 
 void setupHandle(int socketNum, int argc, char **argv);
-void clientExit(int socketNum);
+void commandExit(int socketNum);
+void commandMessage(int sockNum, char *buf, int sendLen);
+int getNumHandles(char *buf, int bufLen, char **bufOffset);
+uint16_t copyHandles(char *sendBuf, char **buf, int numHandles, int bufLen);
+uint16_t copyHandle(char *sendBuf, char **buf, int bufLen);
+uint16_t copyMessage(char *sendBuf, char *buf, int numHandles, int bufLen);
+
+// Global client variables
+char clientHandle[MAX_HANDLE_LEN + 1];
+uint8_t clientHandleLen = 0;
 
 int main(int argc, char * argv[]) {
 	int socketNum = 0;         //socket descriptor of server
-	
 	checkArgs(argc, argv);
 
 	/* set up the TCP Client socket  */
@@ -51,7 +59,6 @@ int main(int argc, char * argv[]) {
 	sendLoop(socketNum);
 	
 	close(socketNum);
-	
 	return 0;
 }
 
@@ -65,6 +72,10 @@ void setupHandle(int socketNum, int argc, char **argv) {
 	// format payload of send
 	buf[0] = handleLen;
 	memcpy(buf + 1, handle, handleLen);
+
+	// set global handle name/len
+	memcpy(clientHandle, handle, handleLen);
+	clientHandleLen = handleLen;
 
 	sendPacket(socketNum, buf, handleLen + 1, INIT_FLAG); // + 1 for handleLen
 	recvPacket(socketNum, buf); // receive response to setup
@@ -113,7 +124,10 @@ void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum)
 	// fulfill given command
 	// TODO
 	if (command == 'e') {
-		clientExit(socketNum);
+		commandExit(socketNum);
+	}
+	else if (command == 'm') {
+		commandMessage(socketNum, sendBuf, sendLen);
 	}
 	else {
 		// For now, just forward the nonsense to the server
@@ -191,8 +205,7 @@ void recvFromServer(int socketNum, char *recvBuf) {
 	printf("%.*s\n", (int)(msgLen - HEADER_BYTES), recvBuf + HEADER_BYTES);
 }
 
-void clientExit(int socketNum) {
-	char buf[MAXBUF];
+void commandExit(int socketNum) {
 	int flag = DEBUG_FLAG;
 
 	// send exit pdu
@@ -202,6 +215,110 @@ void clientExit(int socketNum) {
 	while (flag != EXIT_ACK_FLAG) {
 		flag = processIncoming(socketNum, INDEF_POLL);
 	}
-
 	//recvPacket(socketNum, buf);
+}
+
+void commandMessage(int sockNum, char *buf, int bufLen) {
+	// given the client input, format and send message to server
+	char sendBuf[MAXBUF]; // holds the payload of intended message
+	char *bufOffset = NULL; // functions use this to coordinate reading of buf
+
+	// format payload
+	memcpy(sendBuf, &clientHandleLen, sizeof(uint8_t)); // sending handle len
+	// printf("\tCHandle len: %d\n", clientHandleLen); //dd
+
+	memcpy(sendBuf + sizeof(uint8_t), clientHandle, clientHandleLen); // sending handle (no null term)
+
+	// printf("\tCHandle: %s\n", clientHandle); //dd
+	int numHandles = getNumHandles(buf, bufLen, &bufOffset);
+	if (numHandles == -1) {
+		// printf("Invalid command format\n"); //dd
+		return;
+	}
+	memcpy(sendBuf + clientHandleLen + 1, &numHandles, sizeof(uint8_t)); // number of destination handles
+	// printf("\tNumHandles: %d\n", numHandles); //dd
+	uint16_t sendLen = sizeof(clientHandleLen) + clientHandleLen + sizeof(uint8_t);
+	sendLen += copyHandles(sendBuf + sendLen, &bufOffset, numHandles, bufLen - (bufOffset - buf)); // each handle's length and the handle
+	sendLen += copyMessage(sendBuf + sendLen, bufOffset, numHandles, bufLen - (bufOffset - buf));  // text message
+
+	// printf("\tsendLen: %d\n", sendLen); //dd
+	// printAsHex(sendBuf, sendLen); // dd
+	sendPacket(sockNum, sendBuf, sendLen, MSG_FLAG);
+}
+
+int getNumHandles(char *buf, int bufLen, char **bufOffset) {
+	// TODO: test
+	int numHandles = -1;
+	if (bufLen >= 3) {
+		// can have a valid number
+		numHandles=strtol(buf + 2, bufOffset, 10); // skip the %m
+	}
+	if (bufLen < 3 || *bufOffset == buf || numHandles <= 0) {
+		// no number is provided
+		return -1;
+	}
+	return numHandles;
+}
+
+uint16_t copyHandles(char *sendBuf, char **buf, int numHandles, int bufLen) {
+	// given the number of handles, copies handle into the send buf
+	// buf pointer must be at the start of the FIRST handle provided (or whitespace BEFORE it)
+	int i;
+	int offset = 0;
+
+	for (i=0; i < numHandles; i++) {
+		// printf("\thandle %d: ", i); //dd
+		offset += copyHandle(sendBuf + offset, buf, bufLen - offset);
+		// printf("\n"); //dd
+	}
+	return offset; // offset is for sendBuf
+}
+
+uint16_t copyHandle(char *sendBuf, char **buf, int bufLen) {
+	// remove white space before first handle
+	uint8_t i = 0;
+	uint8_t whiteSpace = 0;
+	char c = (*buf)[i];
+	while (i < bufLen && isspace(c)) {
+		c = (*buf)[i];
+		i++;
+	}
+	whiteSpace = i - 1;
+	if (whiteSpace <= 0) { i++;	}
+	// copy each handle and its len into the send buf
+	while (i < bufLen && !isspace(c)) {
+		// printf("%c",c); //dd
+		sendBuf[sizeof(uint8_t) + i - whiteSpace - 1] = c;
+		c = (*buf)[i];
+		i++;
+	}
+	sendBuf[0] = i - whiteSpace - 1; // number of bytes not including preceeding white space // dd idk if -1 is right
+	printf("HANDLELEN: %d\n",sendBuf[0]);
+	*buf += i; // increment buf by the number of bytes in the handle
+	return i - whiteSpace;
+}
+
+uint16_t copyMessage(char *sendBuf, char *buf, int numHandles, int bufLen) {
+	// copies the message in buf to sendBuf, ignoring preceeding white space
+	// remove white space before the message
+	uint8_t i = 0;
+	uint8_t whiteSpace = 0;
+	char c = buf[i];
+	while (i < bufLen && isspace(c)) {
+		c = buf[i];
+		i++;
+	}
+	whiteSpace = i;
+	if (whiteSpace == 0) { i++;	}
+
+	// copy over the message until the end of string
+	// printf("\tmessage: "); //dd
+	while (i < bufLen) {
+		// printf("%c",c); //dd
+		sendBuf[i - whiteSpace - 1] = c;
+		c = buf[i];
+		i++;
+	}
+	// printf("\n"); //dd
+	return i - whiteSpace;
 }

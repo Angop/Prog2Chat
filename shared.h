@@ -18,8 +18,10 @@
 #define INIT_FLAG 1
 #define INIT_ACPT_FLAG 2
 #define INIT_ERR_FLAG 3
+#define MSG_FLAG 5
 #define EXIT_FLAG 8
 #define EXIT_ACK_FLAG 9
 
 int exitFound(char *buf, int len);
 uint8_t parseFlag(char *buf);
+void printAsHex(char *buf, uint16_t len);

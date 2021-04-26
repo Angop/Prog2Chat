@@ -144,3 +144,15 @@ int getNumEntries() {
     // returns the number of entries in the linked list
     return shLen;
 }
+
+
+void printAllEntries() {
+    shNode cur = root;
+    int i = 0;
+    printf("ENTRIES:\n");
+    while (cur != NULL) {
+        printf("\tHandle: %s Socket %d,\n", cur->handle, cur->sNum);
+        cur = cur->next;
+        i++;
+    }
+}

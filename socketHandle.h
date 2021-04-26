@@ -11,9 +11,10 @@
 
 int addSocketHandle(int socketNum, char *handle, int handleLen);
 int closeSocketHandle(int socketNum);
-int getSocket(char *handle, int handleLen);
+int getSocket(char *handle, int handleLen); // -1 handle does not exist
 void getAllSockets(int *socketList);
 void getAllHandles(char (*handleList)[MAX_HANDLE_LEN + 1]);
 int getNumEntries();
 // int updateSocketHandle(int socketNum, char *handle); // probably not needed
 // int getHandle(); // probably not needed
+void printAllEntries();

@@ -31,13 +31,20 @@ void handleClient(int clientSocket);
 void recvFromClient(int clientSocket, char *buf);
 int checkArgs(int argc, char *argv[]);
 int checkForExit(char *buf);
-void forwardToClient(int clientSocket, char *pdu1); // forwards existing pdu to client
+void forwardToClient(int clientSocket, char *orig); // forwards existing pdu to client
 
 // functions to handle each of the user functions
 void initialPacket(char *pdu, int socketNum);
 void clientExit(int clientSocket);
+void messageFlag(char *pdu, int socketNum);
+
+// higher level helpers
+uint8_t getNumHandles(char *pdu, uint16_t pduLen);
+void getSockets(int numHandles, char *pdu, int *destSockets, int sendSocket);
+void badDestHandle(int sendSocket, char *handle, int handleLen);
 
 int main(int argc, char *argv[]) {
+	// TODO: reduce to 15 lines or less
 	int serverSocket = setupServer(argc, argv);   //socket descriptor for the server socket
 	int activeSocket = 0;   //socket descriptor for the currently active socket
 
@@ -76,6 +83,9 @@ void handleClient(int clientSocket) {
 	else if (flag == INIT_FLAG) {
 		initialPacket(pdu, clientSocket);
 	}
+	else if (flag == MSG_FLAG) {
+		messageFlag(pdu, clientSocket);
+	}
 }
 
 // high level client functionality
@@ -90,7 +100,7 @@ void initialPacket(char *pdu, int socketNum) {
 	memcpy(&handleLen, pdu + HEADER_BYTES, sizeof(uint8_t));
 	memcpy(handle, pdu + HEADER_BYTES + 1, handleLen);
 
-	if (!addSocketHandle(socketNum, handle, 1)) {
+	if (!addSocketHandle(socketNum, handle, handleLen)) {
 		// duplicate handle
 		removeFromPollSet(socketNum);
 		sendPacket(socketNum, NULL, 0, INIT_ERR_FLAG);
@@ -115,6 +125,67 @@ void clientExit(int clientSocket) {
 	}
 }
 
+void messageFlag(char *pdu, int socketNum) {
+	// sends incoming message from client to destination client(s)
+	// find the list of destination handles
+	uint16_t pduLen;
+	memcpy(&pduLen, pdu, sizeof(pduLen));
+	pduLen = ntohs(pduLen);
+	printf("PDULEN: %d", pduLen);
+	uint8_t numHandles = getNumHandles(pdu, pduLen);
+	int destSockets[numHandles];
+	printAsHex(pdu, pduLen);
+	getSockets(numHandles, pdu, destSockets, socketNum);
+	printf("GOT SOCKETS\n");
+
+	// send to each destination client
+	uint8_t i;
+	for (i=0; i < numHandles; i++) {
+		if (destSockets[i] != -1) {
+			forwardToClient(destSockets[i], pdu);
+		}
+	}
+}
+
+uint8_t getNumHandles(char *pdu, uint16_t pduLen) {
+	// gets the number of destination handles in a message pdu
+	uint8_t handleLen = pdu[0 + HEADER_BYTES];
+
+	return pdu[handleLen + 1 + HEADER_BYTES];
+}
+void getSockets(int numHandles, char *pdu, int *destSockets, int sendSocket) {
+	uint8_t offset = pdu[HEADER_BYTES] + HEADER_BYTES + 2; // start of the first destination handle len
+	int i = 0;
+	char handle[MAX_HANDLE_LEN];
+	uint8_t handleLen = 0;
+
+	for (i=0; i < numHandles; i++) {
+		// get the handle
+		printf("OFFSET=%d\n",offset);
+		handleLen = pdu[offset];
+		printf("HANDLELEN=%d\n",handleLen);
+		memcpy(handle, pdu + offset + 1, handleLen);
+
+		// look up its socket number
+		if ((destSockets[i] = getSocket(handle, handleLen)) == -1) {
+			// handle does not exist
+			badDestHandle(sendSocket, handle, handleLen);
+		}
+		offset += handleLen;
+	}
+}
+
+void badDestHandle(int sendSocket, char *handle, int handleLen) {
+	// TODO
+	// tells sending client that destination handle does not exist
+	printf("Bad handle given: %.*s\n", handleLen, handle);
+	printAsHex(handle, handleLen);
+    char handleList[getNumEntries()][101];
+	getAllHandles(handleList);
+
+	printAllEntries();
+}
+
 void recvFromClient(int clientSocket, char *buf)
 {
 	uint16_t messageLen;
@@ -126,19 +197,21 @@ void recvFromClient(int clientSocket, char *buf)
 	printf("PDU Len: %d Flag: %d Message: %.*s\n", messageLen, buf[2], messageLen - 3,buf + 3);
 }
 
-void forwardToClient(int clientSocket, char *pdu1) {
-	// Tests the clients receive process
-	uint16_t pdu1Len;
-	char pdu2Message[MAXBUF];
-	memcpy(&pdu1Len, pdu1, sizeof(uint16_t));
-	pdu1Len = ntohs(pdu1Len);
+void forwardToClient(int clientSocket, char *orig) {
+	// forwards an existing packet to specified client
+	printf("FORWARDING\n");
+	char newMessage[MAXBUF];
+	uint16_t origLen;
+	memcpy(&origLen, orig, sizeof(uint16_t));
+	origLen = ntohs(origLen);
 
-	sprintf(pdu2Message, "Number of bytes received by server was: %d", (int)pdu1Len);
-	uint16_t pdu2Len = strnlen(pdu2Message, MAXBUF) + 1; // +1 for null termination
+	sprintf(newMessage, "Number of bytes received by server was: %d", (int)origLen);
+	uint16_t newLen = strnlen(newMessage, MAXBUF) + 1; // +1 for null termination
 
-	sendPacket(clientSocket, pdu1 + HEADER_BYTES, pdu1Len - HEADER_BYTES, 14);
-	sendPacket(clientSocket, pdu2Message, pdu2Len, 14);
+	sendPacket(clientSocket, orig + HEADER_BYTES, origLen - HEADER_BYTES, 14);
+	sendPacket(clientSocket, newMessage, newLen, 14);
 }
+
 
 int checkForExit(char *buf) {
 	/* checks if the given pdu indicates a client is exiting
