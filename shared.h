@@ -21,6 +21,10 @@
 #define MSG_FLAG 5
 #define EXIT_FLAG 8
 #define EXIT_ACK_FLAG 9
+#define LST_REQ_FLAG 10
+#define LST_NUM_FLAG 11
+#define LST_HAN_FLAG 12
+#define LST_DNE_FLAG 13
 
 int exitFound(char *buf, int len);
 uint8_t parseFlag(char *buf);

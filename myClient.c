@@ -29,6 +29,8 @@ void sendLoop(int socketNum);
 int getIncoming(int socketNum, int wait);
 void processIncoming(char *inBuf, uint16_t inBufLen);
 void incomingMessage(char *inBuf, uint16_t inBufLen);
+void incomingList(char *inBuf, uint16_t inBufLen);
+void listPrintHandles(uint32_t numHandles);
 int getMessagePtr(char *inBuf, uint16_t inBufLen, char **message);
 uint16_t recvFromServer(int socketNum, char *recvBuf);
 int getCommand(char *buf, int len);
@@ -132,6 +134,10 @@ void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum)
 	else if (command == 'm') {
 		commandMessage(socketNum, sendBuf, sendLen);
 	}
+	else if (command == 'l') {
+		// requests a list of handles from server
+		sendPacket(socketNum, NULL, 0, LST_REQ_FLAG);
+	}
 	else {
 		// For now, just forward the nonsense to the server
 		sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
@@ -202,6 +208,13 @@ void processIncoming(char *inBuf, uint16_t inBufLen) {
 	if (flag == MSG_FLAG) {
 		incomingMessage(inBuf, inBufLen);
 	}
+	else if (flag == LST_NUM_FLAG) {
+		incomingList(inBuf, inBufLen);
+	}
+	else {
+		// just print what is recieved
+		printAsHex(inBuf, inBufLen);
+	}
 }
 
 void incomingMessage(char *inBuf, uint16_t inBufLen) {
@@ -226,6 +239,37 @@ int getMessagePtr(char *inBuf, uint16_t inBufLen, char **message) {
 	*message = inBuf + offset + 1; // set the message pointer to begining of message
 
 	return inBufLen - (*message - inBuf); // return the length of the message
+}
+
+void incomingList(char *inBuf, uint16_t inBufLen) {
+	uint32_t numHandles = 0;
+	memcpy(&numHandles, inBuf + HEADER_BYTES, sizeof(numHandles));
+	numHandles = ntohl(numHandles);
+	printf("Number of clients: %d\n", numHandles);
+
+	listPrintHandles(numHandles);
+
+	// Get the done message
+	char buf[MAXBUF];
+	int socketNum = pollCall(INDEF_POLL);
+	recvFromServer(socketNum, buf);
+}
+
+void listPrintHandles(uint32_t numHandles) {
+	int i = 0;
+	int socketNum = 0;
+	char hBuf[MAXBUF];
+	uint8_t handleLen = 0;
+
+	while (i < numHandles) {
+		// poll server
+		// TODO: will need to update this to ignore stdin socket
+		socketNum = pollCall(INDEF_POLL); //dd I dont like this
+		recvFromServer(socketNum, hBuf);
+		handleLen = hBuf[HEADER_BYTES];
+		printf("\t%.*s\n", handleLen, hBuf + HEADER_BYTES + 1);
+		i++;
+	}
 }
 
 uint16_t recvFromServer(int socketNum, char *recvBuf) {

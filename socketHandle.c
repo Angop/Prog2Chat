@@ -133,7 +133,7 @@ void getAllHandles(char (*handleList)[101]) {
     shNode cur = root;
     int i = 0;
     while (cur != NULL) {
-        memcpy(handleList[i], cur->handle, cur->handleLen);
+        memcpy(handleList[i], cur->handle, cur->handleLen + 1); // +1 for null term
         cur = cur->next;
         i++;
     }

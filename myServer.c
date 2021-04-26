@@ -37,6 +37,8 @@ void forwardToClient(int clientSocket, char *orig, int flag); // forwards existi
 void initialPacket(char *pdu, int socketNum);
 void clientExit(int clientSocket);
 void messageFlag(char *pdu, int socketNum);
+void listFlag(int socketNum);
+void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum);
 
 // higher level helpers
 uint8_t getNumHandles(char *pdu, uint16_t pduLen);
@@ -86,6 +88,9 @@ void handleClient(int clientSocket) {
 	else if (flag == MSG_FLAG) {
 		messageFlag(pdu, clientSocket);
 	}
+	else if (flag == LST_REQ_FLAG) {
+		listFlag(clientSocket);
+	}
 }
 
 // high level client functionality
@@ -94,11 +99,12 @@ void initialPacket(char *pdu, int socketNum) {
 	// response to flag=1
 	uint8_t handleLen = 0; // length of handle not including null byte
 	char handle[handleLen + 1]; // +1 for null
-	handle[handleLen] = '\0'; // null terminate
 
 	// TODO: error check bad handleLen? 3+1+handleLen==pduLen?
 	memcpy(&handleLen, pdu + HEADER_BYTES, sizeof(uint8_t));
 	memcpy(handle, pdu + HEADER_BYTES + 1, handleLen);
+	handle[handleLen] = '\0'; // null terminate
+
 
 	if (!addSocketHandle(socketNum, handle, handleLen)) {
 		// duplicate handle
@@ -176,7 +182,7 @@ void getSockets(int numHandles, char *pdu, int *destSockets, int sendSocket) {
 }
 
 void badDestHandle(int sendSocket, char *handle, int handleLen) {
-	// TODO
+	// TODO: send error message to client
 	// tells sending client that destination handle does not exist
 	printf("Bad handle given: %.*s\n", handleLen, handle);
 	printAsHex(handle, handleLen);
@@ -184,6 +190,40 @@ void badDestHandle(int sendSocket, char *handle, int handleLen) {
 	getAllHandles(handleList);
 
 	printAllEntries();
+}
+
+void listFlag(int socketNum) {
+	printAllEntries();
+	uint32_t entries = getNumEntries();
+    char handleList[entries][101];
+	getAllHandles(handleList);
+
+	// send flag 11 with number of handles
+	char sendBuf[MAXBUF];
+	entries = htonl(entries);
+	memcpy(sendBuf, &entries, sizeof(entries));
+	sendPacket(socketNum, sendBuf, sizeof(entries), LST_NUM_FLAG);
+	entries = ntohl(entries);
+
+	// send each of the handles
+	listSendHandles(entries, handleList, socketNum);
+	
+	// send done flag
+	sendPacket(socketNum, NULL, 0, LST_DNE_FLAG);
+}
+
+void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum) {
+	int i = 0;
+	char sendBuf[MAXBUF];
+	uint8_t handleLen = 0;
+
+	for (i=0; i<numHandles; i++) {
+		handleLen = strnlen(handleList[i], MAX_HANDLE_LEN);
+		printf("%d\n",handleLen);
+		memcpy(sendBuf, &handleLen, sizeof(handleLen));
+		memcpy(sendBuf + sizeof(handleLen), handleList[i], handleLen);
+		sendPacket(socketNum, sendBuf, handleLen + sizeof(handleLen), LST_HAN_FLAG);
+	}
 }
 
 void recvFromClient(int clientSocket, char *buf)
