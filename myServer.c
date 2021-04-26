@@ -31,7 +31,7 @@ void handleClient(int clientSocket);
 void recvFromClient(int clientSocket, char *buf);
 int checkArgs(int argc, char *argv[]);
 int checkForExit(char *buf);
-void forwardToClient(int clientSocket, char *orig); // forwards existing pdu to client
+void forwardToClient(int clientSocket, char *orig, int flag); // forwards existing pdu to client
 
 // functions to handle each of the user functions
 void initialPacket(char *pdu, int socketNum);
@@ -142,7 +142,7 @@ void messageFlag(char *pdu, int socketNum) {
 	uint8_t i;
 	for (i=0; i < numHandles; i++) {
 		if (destSockets[i] != -1) {
-			forwardToClient(destSockets[i], pdu);
+			forwardToClient(destSockets[i], pdu, MSG_FLAG);
 		}
 	}
 }
@@ -197,7 +197,7 @@ void recvFromClient(int clientSocket, char *buf)
 	printf("PDU Len: %d Flag: %d Message: %.*s\n", messageLen, buf[2], messageLen - 3,buf + 3);
 }
 
-void forwardToClient(int clientSocket, char *orig) {
+void forwardToClient(int clientSocket, char *orig, int flag) {
 	// forwards an existing packet to specified client
 	printf("FORWARDING\n");
 	char newMessage[MAXBUF];
@@ -206,10 +206,10 @@ void forwardToClient(int clientSocket, char *orig) {
 	origLen = ntohs(origLen);
 
 	sprintf(newMessage, "Number of bytes received by server was: %d", (int)origLen);
-	uint16_t newLen = strnlen(newMessage, MAXBUF) + 1; // +1 for null termination
+	// uint16_t newLen = strnlen(newMessage, MAXBUF) + 1; // +1 for null termination
 
-	sendPacket(clientSocket, orig + HEADER_BYTES, origLen - HEADER_BYTES, 14);
-	sendPacket(clientSocket, newMessage, newLen, 14);
+	sendPacket(clientSocket, orig + HEADER_BYTES, origLen - HEADER_BYTES, flag);
+	// sendPacket(clientSocket, newMessage, newLen, 14);
 }
 
 

@@ -26,8 +26,11 @@
 
 
 void sendLoop(int socketNum);
-int processIncoming(int socketNum, int wait);
-void recvFromServer(int socketNum, char *recvBuf);
+int getIncoming(int socketNum, int wait);
+void processIncoming(char *inBuf, uint16_t inBufLen);
+void incomingMessage(char *inBuf, uint16_t inBufLen);
+int getMessagePtr(char *inBuf, uint16_t inBufLen, char **message);
+uint16_t recvFromServer(int socketNum, char *recvBuf);
 int getCommand(char *buf, int len);
 void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum);
 int sendToServer(int socketNum, char *sendBuf, uint16_t sendLen);
@@ -102,12 +105,12 @@ void sendLoop(int socketNum) {
 	do {
 		// Process input
 		sendLen = readFromStdin(sendBuf);
-		printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
+		// printf("read: %s string len: %d (including null)\n", sendBuf, sendLen); // dd
 		command = getCommand(sendBuf, sendLen);
 		handleCommand(command, sendBuf, sendLen, socketNum);
 
 		// Process any incoming packets
-		processIncoming(socketNum, IMM_POLL);
+		getIncoming(socketNum, IMM_POLL);
 	} while(command != 'e');
 }
 
@@ -147,7 +150,7 @@ int readFromStdin(char * buffer)
 	
 	// Important you don't input more characters than you have space 
 	buffer[0] = '\0';
-	printf("Enter data: ");
+	printf("$: ");
 	while (inputLen < (MAXBUF - 1) && aChar != '\n')
 	{
 		aChar = getchar();
@@ -175,22 +178,57 @@ void checkArgs(int argc, char * argv[])
 	}
 }
 
-int processIncoming(int socketNum, int wait) {
+int getIncoming(int socketNum, int wait) {
 	// checks server for any incoming packets and deals with them
 	//TODO
 	char buf[MAXBUF];
 	int result = 0;
+	uint16_t pduLen = 0;
 	if ((result=pollCall(wait)) != -1) {
-		printf("Poll result: %d\n", result);
-		recvFromServer(socketNum, buf); // probably write a handle incoming?
+		// printf("Poll result: %d\n", result);
+		pduLen = recvFromServer(socketNum, buf); // probably write a handle incoming?
+		processIncoming(buf, pduLen);
 		return parseFlag(buf);
 	}
 	// otherwise, server did not send anything
-	printf("Poll result: %d\n", result);
+	// printf("Poll result: %d\n", result);
 	return DEBUG_FLAG;
 }
 
-void recvFromServer(int socketNum, char *recvBuf) {
+void processIncoming(char *inBuf, uint16_t inBufLen) {
+	// TODO
+	int flag = parseFlag(inBuf);
+
+	if (flag == MSG_FLAG) {
+		incomingMessage(inBuf, inBufLen);
+	}
+}
+
+void incomingMessage(char *inBuf, uint16_t inBufLen) {
+	uint8_t sendHandleLen = inBuf[HEADER_BYTES];
+	char *sendHandle = inBuf + HEADER_BYTES + 1; // contains the start of handle
+	char *message; // contains the start of handle
+	int messageLen = getMessagePtr(inBuf, inBufLen, &message);
+
+	printf("\n%.*s: %.*s\n", sendHandleLen, sendHandle, messageLen, message);
+}
+
+int getMessagePtr(char *inBuf, uint16_t inBufLen, char **message) {
+	// TODO
+	uint8_t offset = inBuf[HEADER_BYTES] + HEADER_BYTES + 2; // start of the first destination handle len
+	uint8_t numHandles = inBuf[(inBuf[HEADER_BYTES])+ 1 + HEADER_BYTES];
+	int i;
+	int handleLen = 0;
+	for (i=0; i < numHandles; i++) {
+		handleLen = inBuf[offset];
+		offset += handleLen;
+	}
+	*message = inBuf + offset + 1; // set the message pointer to begining of message
+
+	return inBufLen - (*message - inBuf); // return the length of the message
+}
+
+uint16_t recvFromServer(int socketNum, char *recvBuf) {
 	// receives a message from the server
 	uint16_t msgLen = 0;
 	uint8_t flag = 0;
@@ -200,9 +238,9 @@ void recvFromServer(int socketNum, char *recvBuf) {
 	memcpy(&flag, recvBuf + sizeof(uint16_t), sizeof(uint8_t));
 	msgLen = ntohs(msgLen);
 
-
-	printf("Recv() from Server bytes-%d and flag-%d: ", msgLen, flag);
-	printf("%.*s\n", (int)(msgLen - HEADER_BYTES), recvBuf + HEADER_BYTES);
+	// printf("Recv() from Server bytes-%d and flag-%d: ", msgLen, flag); //dd 
+	// printf("%.*s\n", (int)(msgLen - HEADER_BYTES), recvBuf + HEADER_BYTES);//dd 
+	return msgLen;
 }
 
 void commandExit(int socketNum) {
@@ -213,7 +251,7 @@ void commandExit(int socketNum) {
 
 	// revceive exit pdu without blocking
 	while (flag != EXIT_ACK_FLAG) {
-		flag = processIncoming(socketNum, INDEF_POLL);
+		flag = getIncoming(socketNum, INDEF_POLL);
 	}
 	//recvPacket(socketNum, buf);
 }
