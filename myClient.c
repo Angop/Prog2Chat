@@ -157,8 +157,8 @@ void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum)
 		commandBroadcast(socketNum, sendBuf, sendLen);
 	}
 	else {
-		// For now, just forward the nonsense to the server
-		sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
+		printf("Invalid command\n");
+		// sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
 	}
 }
 
@@ -217,10 +217,7 @@ void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket) {
 		close(serverSocket);
 		exit(EXIT_SUCCESS);
 	}
-	else {
-		// just print what is recieved
-		printAsHex(inBuf, inBufLen);
-	}
+	// otherwise its invalid, just ignore
 }
 
 void incomingMessage(char *inBuf, uint16_t inBufLen) {
