@@ -38,7 +38,7 @@ uint8_t recvPacket(int clientSocket, char *buf) {
 	
 	// get the header
 	if (!safeRecv(clientSocket, buf, sizeof(messageLen))) {
-		return -1;
+		return 0;
 	}
 	
 	memcpy(&messageLen, buf, sizeof(messageLen));
@@ -48,7 +48,7 @@ uint8_t recvPacket(int clientSocket, char *buf) {
 
 	//now get the data from the client_socket
 	if (!safeRecv(clientSocket, buf + sizeof(messageLen), messageLen - sizeof(messageLen))) {
-		return -1;
+		return 0;
 	}
 	return buf[HEADER_BYTES]; // HEADER_BYTES is the location of the flag
 }

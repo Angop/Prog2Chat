@@ -8,9 +8,8 @@
 #include <netinet/in.h>
 
 #define HEADER_BYTES 3
-#define MAXBUF 1024
+#define MAXBUF 1400
 #define DEBUG_FLAG 14
-#define MAXBUF 1024
 #define MAX_HANDLE_LEN 100
 #define IMM_POLL 0
 #define INDEF_POLL -1
@@ -20,6 +19,7 @@
 #define INIT_ERR_FLAG 3
 #define BRC_FLAG 4
 #define MSG_FLAG 5
+#define MSG_DNE_FLAG 7
 #define EXIT_FLAG 8
 #define EXIT_ACK_FLAG 9
 #define LST_REQ_FLAG 10

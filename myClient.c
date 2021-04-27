@@ -86,21 +86,21 @@ void setupHandle(int socketNum, int argc, char **argv) {
 	memcpy(clientHandle, handle, handleLen);
 	clientHandleLen = handleLen;
 
+	if (clientHandleLen > 100) {
+		printf("Invalid handle, handle longer than 100 characters: %s\n", clientHandle);
+		close(socketNum);
+		exit(EXIT_FAILURE);
+	}
+
 	sendPacket(socketNum, buf, handleLen + 1, INIT_FLAG); // + 1 for handleLen
 	recvPacket(socketNum, buf); // receive response to setup
 	if ((flag=parseFlag(buf)) == INIT_ERR_FLAG) {
 		// handle is taken
-		printf("Error on initial packet (handle already exists)\n");
+		printf("Handle already in use: %s\n", clientHandle);
 		close(socketNum);
 		exit(EXIT_FAILURE);
 	}
-	else if (flag != INIT_ACPT_FLAG) {
-		// debug bad server response
-		printf("Error on initial packet (server gave bad response)\n");
-		exit(EXIT_FAILURE);
-	}
 	// otherwise, the handle is good!
-	printf("Connection successful!\n");
 }
 
 void sendLoop(int serverSocket) {
@@ -203,6 +203,9 @@ void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket) {
 	if (flag == MSG_FLAG) {
 		incomingMessage(inBuf, inBufLen);
 	}
+	else if (flag == MSG_DNE_FLAG) {
+		printf("\nClient with handle %.*s does not exist.\n", inBuf[HEADER_BYTES], inBuf + HEADER_BYTES + 1);
+	}
 	else if (flag == BRC_FLAG) {
 		incomingBroadcast(inBuf, inBufLen);
 	}
@@ -280,7 +283,7 @@ void incomingBroadcast(char *inBuf, uint16_t inBufLen) {
 	char *sendHandle = inBuf + HEADER_BYTES + 1; // contains the start of handle
 	char *message = inBuf + HEADER_BYTES + 1 + sendHandleLen; // contains the start of handle
 
-	printf("\n%.*s: %.*s\n", sendHandleLen, sendHandle, inBufLen - (message - inBuf), message);
+	printf("\n%.*s: %.*s\n", sendHandleLen, sendHandle, (int)(inBufLen - (message - inBuf)), message);
 }
 
 uint16_t recvFromServer(int socketNum, char *recvBuf) {

@@ -26,6 +26,7 @@
 #include "socketHandle.h"
 
 int setupServer(int argc, char *argv[]);
+int mainLoop(int serverSocket);
 void handleAccept(int serverSocket);
 void handleClient(int clientSocket);
 void recvFromClient(int clientSocket, char *buf);
@@ -48,14 +49,16 @@ void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum
 void bcSendHandles(char *pdu, uint32_t entries, int *socketList, int senderSocket);
 
 int main(int argc, char *argv[]) {
-	// TODO: reduce to 15 lines or less
 	int serverSocket = setupServer(argc, argv);   //socket descriptor for the server socket
-	int activeSocket = 0;   //socket descriptor for the currently active socket
+	mainLoop(serverSocket);
+	return 0;
+}
 
+int mainLoop(int serverSocket) {
+	int activeSocket = 0;   //socket descriptor for the currently active socket
 	// wait for client(s) to connect and recieve data
 	while (1) {
 		activeSocket = pollCall(-1);
-
 		if (activeSocket == serverSocket) {
 			// a client is trying to connect
 			handleAccept(serverSocket);
@@ -65,14 +68,11 @@ int main(int argc, char *argv[]) {
 			handleClient(activeSocket);
 		}
 	}
-	
-	return 0;
 }
 
 void handleAccept(int serverSocket) {
 	int clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
 	addToPollSet(clientSocket);
-	// TODO: handle waiting list of clients who have connected but not yet sent initial packet
 }
 
 void handleClient(int clientSocket) {
@@ -106,7 +106,6 @@ void initialPacket(char *pdu, int socketNum) {
 	uint8_t handleLen = 0; // length of handle not including null byte
 	char handle[handleLen + 1]; // +1 for null
 
-	// TODO: error check bad handleLen? 3+1+handleLen==pduLen?
 	memcpy(&handleLen, pdu + HEADER_BYTES, sizeof(uint8_t));
 	memcpy(handle, pdu + HEADER_BYTES + 1, handleLen);
 	handle[handleLen] = '\0'; // null terminate
@@ -188,18 +187,15 @@ void getSockets(int numHandles, char *pdu, int *destSockets, int sendSocket) {
 }
 
 void badDestHandle(int sendSocket, char *handle, int handleLen) {
-	// TODO: send error message to client
 	// tells sending client that destination handle does not exist
-	printf("Bad handle given: %.*s\n", handleLen, handle);
-	printAsHex(handle, handleLen);
-    char handleList[getNumEntries()][101];
-	getAllHandles(handleList);
+	char sendBuf[MAXBUF];
+	sendBuf[0] = handleLen;
+	memcpy(sendBuf + 1, handle, handleLen);
 
-	printAllEntries();
+	sendPacket(sendSocket, sendBuf, handleLen + 1, MSG_DNE_FLAG);
 }
 
 void listFlag(int socketNum) {
-	printAllEntries();
 	uint32_t entries = getNumEntries();
     char handleList[entries][101];
 	getAllHandles(handleList);
