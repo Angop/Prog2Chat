@@ -27,7 +27,7 @@
 
 void sendLoop(int socketNum);
 int getIncoming(int socketNum, int wait);
-void processIncoming(char *inBuf, uint16_t inBufLen);
+void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket);
 void incomingMessage(char *inBuf, uint16_t inBufLen);
 void incomingList(char *inBuf, uint16_t inBufLen);
 void listPrintHandles(uint32_t numHandles);
@@ -60,6 +60,7 @@ int main(int argc, char * argv[]) {
 	setupHandle(socketNum, argc, argv);
 	setupPollSet();
 	addToPollSet(socketNum);
+	addToPollSet(STDIN_FILENO);
 	
 	sendLoop(socketNum);
 	
@@ -99,20 +100,31 @@ void setupHandle(int socketNum, int argc, char **argv) {
 	printf("Connection successful!\n");
 }
 
-void sendLoop(int socketNum) {
-	char sendBuf[MAXBUF]; //data buffer
-	uint16_t sendLen = 0; // length of buf
+void sendLoop(int serverSocket) {
+	char buf [MAXBUF]; //data buffer
+	uint16_t bufLen = 0; // length of buf
 	char command = '\0';
+	int socketNum = 0;
+
 
 	do {
-		// Process input
-		sendLen = readFromStdin(sendBuf);
-		// printf("read: %s string len: %d (including null)\n", sendBuf, sendLen); // dd
-		command = getCommand(sendBuf, sendLen);
-		handleCommand(command, sendBuf, sendLen, socketNum);
+		printf("$: ");
+		fflush(stdout);
+		// get the active socket
+		socketNum = getIncoming(socketNum, INDEF_POLL);
+		
+		// handle client input
+		if (socketNum == STDIN_FILENO) {
+			bufLen = readFromStdin(buf);
+			command = getCommand(buf, bufLen);
+			handleCommand(command, buf, bufLen, serverSocket);
+		}
 
-		// Process any incoming packets
-		getIncoming(socketNum, IMM_POLL);
+		// handle server input
+		else {
+			bufLen = recvFromServer(serverSocket, buf);
+			processIncoming(buf, bufLen, serverSocket);
+		}
 	} while(command != 'e');
 }
 
@@ -149,29 +161,34 @@ int sendToServer(int socketNum, char *sendBuf, uint16_t sendLen) {
 	return sendLen;
 }
 
-int readFromStdin(char * buffer)
-{
-	char aChar = 0;
+int readFromStdin(char * buffer) {
 	int inputLen = 0;        
-	
-	// Important you don't input more characters than you have space 
-	buffer[0] = '\0';
-	printf("$: ");
-	while (inputLen < (MAXBUF - 1) && aChar != '\n')
-	{
-		aChar = getchar();
-		if (aChar != '\n')
-		{
-			buffer[inputLen] = aChar;
-			inputLen++;
-		}
-	}
-	
+	inputLen = read(STDIN_FILENO, buffer, MAXBUF - 1);
+
 	// Null terminate the string
-	buffer[inputLen] = '\0';
-	inputLen++;
+	buffer[inputLen - 1] = '\0'; // replaces newline
 	
 	return inputLen;
+
+	// char aChar = 0;
+	
+	// // Important you don't input more characters than you have space 
+	// buffer[0] = '\0';
+	// while (inputLen < (MAXBUF - 1) && aChar != '\n')
+	// {
+	// 	aChar = getchar();
+	// 	if (aChar != '\n')
+	// 	{
+	// 		buffer[inputLen] = aChar;
+	// 		inputLen++;
+	// 	}
+	// }
+	
+	// // Null terminate the string
+	// buffer[inputLen] = '\0';
+	// inputLen++;
+	
+	// return inputLen;
 }
 
 void checkArgs(int argc, char * argv[])
@@ -190,18 +207,16 @@ int getIncoming(int socketNum, int wait) {
 	char buf[MAXBUF];
 	int result = 0;
 	uint16_t pduLen = 0;
-	if ((result=pollCall(wait)) != -1) {
-		// printf("Poll result: %d\n", result);
-		pduLen = recvFromServer(socketNum, buf); // probably write a handle incoming?
-		processIncoming(buf, pduLen);
-		return parseFlag(buf);
+	if ((result=pollCall(wait)) == -1) {
+		// server did not send anything
+		// printf("Poll result: %d\n", result); //dd
+		// return DEBUG_FLAG;
 	}
-	// otherwise, server did not send anything
-	// printf("Poll result: %d\n", result);
-	return DEBUG_FLAG;
+	// printf("Poll result: %d\n", result); //dd
+	return result;
 }
 
-void processIncoming(char *inBuf, uint16_t inBufLen) {
+void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket) {
 	// TODO
 	int flag = parseFlag(inBuf);
 
@@ -210,6 +225,11 @@ void processIncoming(char *inBuf, uint16_t inBufLen) {
 	}
 	else if (flag == LST_NUM_FLAG) {
 		incomingList(inBuf, inBufLen);
+	}
+	else if (flag == EXIT_ACK_FLAG) {
+		// Time for the client to exit
+		close(serverSocket);
+		exit(EXIT_SUCCESS);
 	}
 	else {
 		// just print what is recieved
@@ -288,16 +308,8 @@ uint16_t recvFromServer(int socketNum, char *recvBuf) {
 }
 
 void commandExit(int socketNum) {
-	int flag = DEBUG_FLAG;
-
 	// send exit pdu
 	sendPacket(socketNum, NULL, 0, EXIT_FLAG);
-
-	// revceive exit pdu without blocking
-	while (flag != EXIT_ACK_FLAG) {
-		flag = getIncoming(socketNum, INDEF_POLL);
-	}
-	//recvPacket(socketNum, buf);
 }
 
 void commandMessage(int sockNum, char *buf, int bufLen) {
@@ -307,24 +319,24 @@ void commandMessage(int sockNum, char *buf, int bufLen) {
 
 	// format payload
 	memcpy(sendBuf, &clientHandleLen, sizeof(uint8_t)); // sending handle len
-	// printf("\tCHandle len: %d\n", clientHandleLen); //dd
+	printf("\tCHandle len: %d\n", clientHandleLen); //dd
 
 	memcpy(sendBuf + sizeof(uint8_t), clientHandle, clientHandleLen); // sending handle (no null term)
 
-	// printf("\tCHandle: %s\n", clientHandle); //dd
+	printf("\tCHandle: %s\n", clientHandle); //dd
 	int numHandles = getNumHandles(buf, bufLen, &bufOffset);
 	if (numHandles == -1) {
-		// printf("Invalid command format\n"); //dd
+		printf("Invalid command format\n");
 		return;
 	}
 	memcpy(sendBuf + clientHandleLen + 1, &numHandles, sizeof(uint8_t)); // number of destination handles
-	// printf("\tNumHandles: %d\n", numHandles); //dd
+	printf("\tNumHandles: %d\n", numHandles); //dd
 	uint16_t sendLen = sizeof(clientHandleLen) + clientHandleLen + sizeof(uint8_t);
 	sendLen += copyHandles(sendBuf + sendLen, &bufOffset, numHandles, bufLen - (bufOffset - buf)); // each handle's length and the handle
 	sendLen += copyMessage(sendBuf + sendLen, bufOffset, numHandles, bufLen - (bufOffset - buf));  // text message
 
-	// printf("\tsendLen: %d\n", sendLen); //dd
-	// printAsHex(sendBuf, sendLen); // dd
+	printf("\tsendLen: %d\n", sendLen); //dd
+	printAsHex(sendBuf, sendLen); // dd
 	sendPacket(sockNum, sendBuf, sendLen, MSG_FLAG);
 }
 
@@ -375,7 +387,6 @@ uint16_t copyHandle(char *sendBuf, char **buf, int bufLen) {
 		i++;
 	}
 	sendBuf[0] = i - whiteSpace - 1; // number of bytes not including preceeding white space // dd idk if -1 is right
-	printf("HANDLELEN: %d\n",sendBuf[0]);
 	*buf += i; // increment buf by the number of bytes in the handle
 	return i - whiteSpace;
 }
