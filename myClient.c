@@ -26,12 +26,13 @@
 
 
 void sendLoop(int socketNum);
-int getIncoming(int socketNum, int wait);
+int getIncoming(int socketNum);
 void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket);
 void incomingMessage(char *inBuf, uint16_t inBufLen);
 void incomingList(char *inBuf, uint16_t inBufLen);
 void listPrintHandles(uint32_t numHandles);
 int getMessagePtr(char *inBuf, uint16_t inBufLen, char **message);
+void incomingBroadcast(char *inBuf, uint16_t inBufLen);
 uint16_t recvFromServer(int socketNum, char *recvBuf);
 int getCommand(char *buf, int len);
 void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum);
@@ -42,10 +43,12 @@ void checkArgs(int argc, char * argv[]);
 void setupHandle(int socketNum, int argc, char **argv);
 void commandExit(int socketNum);
 void commandMessage(int sockNum, char *buf, int sendLen);
+void copySendingClientHandle(char *buf);
 int getNumHandles(char *buf, int bufLen, char **bufOffset);
 uint16_t copyHandles(char *sendBuf, char **buf, int numHandles, int bufLen);
 uint16_t copyHandle(char *sendBuf, char **buf, int bufLen);
-uint16_t copyMessage(char *sendBuf, char *buf, int numHandles, int bufLen);
+uint16_t copyMessage(char *sendBuf, char *buf, int bufLen);
+void commandBroadcast(int socketNum, char *buf, int sendLen);
 
 // Global client variables
 char clientHandle[MAX_HANDLE_LEN + 1];
@@ -111,7 +114,7 @@ void sendLoop(int serverSocket) {
 		printf("$: ");
 		fflush(stdout);
 		// get the active socket
-		socketNum = getIncoming(socketNum, INDEF_POLL);
+		socketNum = getIncoming(socketNum);
 		
 		// handle client input
 		if (socketNum == STDIN_FILENO) {
@@ -150,6 +153,9 @@ void handleCommand(char command, char *sendBuf, uint16_t sendLen, int socketNum)
 		// requests a list of handles from server
 		sendPacket(socketNum, NULL, 0, LST_REQ_FLAG);
 	}
+	else if (command == 'b') {
+		commandBroadcast(socketNum, sendBuf, sendLen);
+	}
 	else {
 		// For now, just forward the nonsense to the server
 		sendPacket(socketNum, sendBuf, sendLen, DEBUG_FLAG);
@@ -169,26 +175,6 @@ int readFromStdin(char * buffer) {
 	buffer[inputLen - 1] = '\0'; // replaces newline
 	
 	return inputLen;
-
-	// char aChar = 0;
-	
-	// // Important you don't input more characters than you have space 
-	// buffer[0] = '\0';
-	// while (inputLen < (MAXBUF - 1) && aChar != '\n')
-	// {
-	// 	aChar = getchar();
-	// 	if (aChar != '\n')
-	// 	{
-	// 		buffer[inputLen] = aChar;
-	// 		inputLen++;
-	// 	}
-	// }
-	
-	// // Null terminate the string
-	// buffer[inputLen] = '\0';
-	// inputLen++;
-	
-	// return inputLen;
 }
 
 void checkArgs(int argc, char * argv[])
@@ -201,17 +187,10 @@ void checkArgs(int argc, char * argv[])
 	}
 }
 
-int getIncoming(int socketNum, int wait) {
-	// checks server for any incoming packets and deals with them
-	//TODO
-	char buf[MAXBUF];
+int getIncoming(int socketNum) {
+	// checks server for any incoming packets and returns socket
 	int result = 0;
-	uint16_t pduLen = 0;
-	if ((result=pollCall(wait)) == -1) {
-		// server did not send anything
-		// printf("Poll result: %d\n", result); //dd
-		// return DEBUG_FLAG;
-	}
+	result = pollCall(INDEF_POLL);
 	// printf("Poll result: %d\n", result); //dd
 	return result;
 }
@@ -219,9 +198,13 @@ int getIncoming(int socketNum, int wait) {
 void processIncoming(char *inBuf, uint16_t inBufLen, int serverSocket) {
 	// TODO
 	int flag = parseFlag(inBuf);
+	// printf("FLAG: %d\n", flag);
 
 	if (flag == MSG_FLAG) {
 		incomingMessage(inBuf, inBufLen);
+	}
+	else if (flag == BRC_FLAG) {
+		incomingBroadcast(inBuf, inBufLen);
 	}
 	else if (flag == LST_NUM_FLAG) {
 		incomingList(inBuf, inBufLen);
@@ -265,7 +248,7 @@ void incomingList(char *inBuf, uint16_t inBufLen) {
 	uint32_t numHandles = 0;
 	memcpy(&numHandles, inBuf + HEADER_BYTES, sizeof(numHandles));
 	numHandles = ntohl(numHandles);
-	printf("Number of clients: %d\n", numHandles);
+	printf("\nNumber of clients: %d\n", numHandles);
 
 	listPrintHandles(numHandles);
 
@@ -290,6 +273,14 @@ void listPrintHandles(uint32_t numHandles) {
 		printf("\t%.*s\n", handleLen, hBuf + HEADER_BYTES + 1);
 		i++;
 	}
+}
+
+void incomingBroadcast(char *inBuf, uint16_t inBufLen) {
+	uint8_t sendHandleLen = inBuf[HEADER_BYTES];
+	char *sendHandle = inBuf + HEADER_BYTES + 1; // contains the start of handle
+	char *message = inBuf + HEADER_BYTES + 1 + sendHandleLen; // contains the start of handle
+
+	printf("\n%.*s: %.*s\n", sendHandleLen, sendHandle, inBufLen - (message - inBuf), message);
 }
 
 uint16_t recvFromServer(int socketNum, char *recvBuf) {
@@ -318,26 +309,27 @@ void commandMessage(int sockNum, char *buf, int bufLen) {
 	char *bufOffset = NULL; // functions use this to coordinate reading of buf
 
 	// format payload
-	memcpy(sendBuf, &clientHandleLen, sizeof(uint8_t)); // sending handle len
-	printf("\tCHandle len: %d\n", clientHandleLen); //dd
-
-	memcpy(sendBuf + sizeof(uint8_t), clientHandle, clientHandleLen); // sending handle (no null term)
-
-	printf("\tCHandle: %s\n", clientHandle); //dd
+	copySendingClientHandle(sendBuf);
 	int numHandles = getNumHandles(buf, bufLen, &bufOffset);
 	if (numHandles == -1) {
 		printf("Invalid command format\n");
 		return;
 	}
 	memcpy(sendBuf + clientHandleLen + 1, &numHandles, sizeof(uint8_t)); // number of destination handles
-	printf("\tNumHandles: %d\n", numHandles); //dd
 	uint16_t sendLen = sizeof(clientHandleLen) + clientHandleLen + sizeof(uint8_t);
 	sendLen += copyHandles(sendBuf + sendLen, &bufOffset, numHandles, bufLen - (bufOffset - buf)); // each handle's length and the handle
-	sendLen += copyMessage(sendBuf + sendLen, bufOffset, numHandles, bufLen - (bufOffset - buf));  // text message
+	sendLen += copyMessage(sendBuf + sendLen, bufOffset, bufLen - (bufOffset - buf));  // text message
 
-	printf("\tsendLen: %d\n", sendLen); //dd
-	printAsHex(sendBuf, sendLen); // dd
+	// printAsHex(sendBuf, sendLen); // dd
 	sendPacket(sockNum, sendBuf, sendLen, MSG_FLAG);
+}
+
+void copySendingClientHandle(char *buf) {
+	// copy handle len then handle into given buf with no null termination
+	memcpy(buf, &clientHandleLen, sizeof(uint8_t)); // sending handle len
+	memcpy(buf + sizeof(clientHandleLen), clientHandle, clientHandleLen); // sending handle (no null term)
+	// printf("\tCHandle len: %d\n", clientHandleLen); //dd
+	// printf("\tCHandle: %s\n", clientHandle); //dd
 }
 
 int getNumHandles(char *buf, int bufLen, char **bufOffset) {
@@ -371,7 +363,7 @@ uint16_t copyHandles(char *sendBuf, char **buf, int numHandles, int bufLen) {
 uint16_t copyHandle(char *sendBuf, char **buf, int bufLen) {
 	// remove white space before first handle
 	uint8_t i = 0;
-	uint8_t whiteSpace = 0;
+	int whiteSpace = 0;
 	char c = (*buf)[i];
 	while (i < bufLen && isspace(c)) {
 		c = (*buf)[i];
@@ -382,7 +374,7 @@ uint16_t copyHandle(char *sendBuf, char **buf, int bufLen) {
 	// copy each handle and its len into the send buf
 	while (i < bufLen && !isspace(c)) {
 		// printf("%c",c); //dd
-		sendBuf[sizeof(uint8_t) + i - whiteSpace - 1] = c;
+		sendBuf[i + sizeof(uint8_t) - whiteSpace - 1] = c;
 		c = (*buf)[i];
 		i++;
 	}
@@ -391,7 +383,7 @@ uint16_t copyHandle(char *sendBuf, char **buf, int bufLen) {
 	return i - whiteSpace;
 }
 
-uint16_t copyMessage(char *sendBuf, char *buf, int numHandles, int bufLen) {
+uint16_t copyMessage(char *sendBuf, char *buf, int bufLen) {
 	// copies the message in buf to sendBuf, ignoring preceeding white space
 	// remove white space before the message
 	uint8_t i = 0;
@@ -406,12 +398,25 @@ uint16_t copyMessage(char *sendBuf, char *buf, int numHandles, int bufLen) {
 
 	// copy over the message until the end of string
 	// printf("\tmessage: "); //dd
-	while (i < bufLen) {
+	while (i <= bufLen) {
 		// printf("%c",c); //dd
 		sendBuf[i - whiteSpace - 1] = c;
 		c = buf[i];
 		i++;
 	}
 	// printf("\n"); //dd
+
 	return i - whiteSpace;
+}
+
+void commandBroadcast(int socketNum, char *buf, int bufLen) {
+	// sends a broadcast message
+	char sendBuf[MAXBUF];
+	uint16_t sendLen = 0;
+	copySendingClientHandle(sendBuf);
+	sendLen = clientHandleLen + sizeof(clientHandleLen);
+	sendLen += copyMessage(sendBuf + sendLen + 1, buf + 2, bufLen - 2); // -2 to skip %b
+	// printf("SENDLEN: %d\n", sendLen);
+
+	sendPacket(socketNum, sendBuf, sendLen, BRC_FLAG);
 }

@@ -38,12 +38,14 @@ void initialPacket(char *pdu, int socketNum);
 void clientExit(int clientSocket);
 void messageFlag(char *pdu, int socketNum);
 void listFlag(int socketNum);
-void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum);
+void broadcastFlag(char *pdu, int socketNum);
 
 // higher level helpers
 uint8_t getNumHandles(char *pdu, uint16_t pduLen);
 void getSockets(int numHandles, char *pdu, int *destSockets, int sendSocket);
 void badDestHandle(int sendSocket, char *handle, int handleLen);
+void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum);
+void bcSendHandles(char *pdu, uint32_t entries, int *socketList, int senderSocket);
 
 int main(int argc, char *argv[]) {
 	// TODO: reduce to 15 lines or less
@@ -84,6 +86,10 @@ void handleClient(int clientSocket) {
 	}
 	else if (flag == INIT_FLAG) {
 		initialPacket(pdu, clientSocket);
+	}
+	else if (flag == BRC_FLAG) {
+		printf("BROADCAST\n");
+		broadcastFlag(pdu, clientSocket);
 	}
 	else if (flag == MSG_FLAG) {
 		messageFlag(pdu, clientSocket);
@@ -226,6 +232,31 @@ void listSendHandles(uint32_t numHandles, char (*handleList)[101], int socketNum
 	}
 }
 
+void broadcastFlag(char *pdu, int socketNum) {
+	// sends message to all clients, except sending client
+	uint32_t entries = getNumEntries();
+    int socketList[entries];
+	getAllSockets(socketList);
+
+	uint8_t sendHandleLen = pdu[HEADER_BYTES];
+	char sendHandle[pdu[HEADER_BYTES] + 1];
+	memcpy(sendHandle, pdu + HEADER_BYTES + 1, sendHandleLen);
+	sendHandle[sendHandleLen] = '\0';
+
+	bcSendHandles(pdu, entries, socketList, socketNum);
+}
+
+void bcSendHandles(char *pdu, uint32_t entries, int *socketList, int senderSocket) {
+	int i = 0;
+	while (i < entries) {
+		if (socketList[i] != senderSocket) {
+			// send if its not the sender socket
+			forwardToClient(socketList[i], pdu, BRC_FLAG);
+		}
+		i++;
+	}
+}
+
 void recvFromClient(int clientSocket, char *buf)
 {
 	uint16_t messageLen;
@@ -239,7 +270,6 @@ void recvFromClient(int clientSocket, char *buf)
 
 void forwardToClient(int clientSocket, char *orig, int flag) {
 	// forwards an existing packet to specified client
-	printf("FORWARDING\n");
 	char newMessage[MAXBUF];
 	uint16_t origLen;
 	memcpy(&origLen, orig, sizeof(uint16_t));

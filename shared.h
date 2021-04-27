@@ -18,6 +18,7 @@
 #define INIT_FLAG 1
 #define INIT_ACPT_FLAG 2
 #define INIT_ERR_FLAG 3
+#define BRC_FLAG 4
 #define MSG_FLAG 5
 #define EXIT_FLAG 8
 #define EXIT_ACK_FLAG 9
