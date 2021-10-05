@@ -1,4 +1,1 @@
-Angela Kerlin noon lab section
-
-I was stuck on parsing %M messages with multiple desination handles, so only a single destination works.
-Also, I do not properly split messages that are longer than 200 bytes.
+Messaging program over command line
